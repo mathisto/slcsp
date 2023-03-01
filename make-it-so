@@ -1,0 +1,48 @@
+#!/usr/bin/env sh
+
+# Blow away existing db and output file
+rm slcsp.sqlite3
+
+# Layout reference table schema
+sqlite3 slcsp.sqlite3 << EOF
+  CREATE TABLE zips(
+    zipcode NVARCHAR(5) NOT NULL,
+    state NVARCHAR(2) NOT NULL,
+    county_code NVARCHAR(5) NOT NULL,
+    name NVARCHAR(50) NOT NULL,
+    rate_area INTEGER
+  );
+
+  CREATE TABLE plans(
+    plan_id NVARCHAR(14) PRIMARY KEY,
+    state NVARCHAR(2) NOT NULL,
+    metal_level NVARCHAR(12) NOT NULL,
+    rate DOUBLE NOT NULL,
+    rate_area INTEGER
+  );
+EOF
+
+# Reseed reference tables
+sqlite3 -csv slcsp.sqlite3 ".import zips.csv zips"
+sqlite3 -csv slcsp.sqlite3 ".import plans.csv plans"
+
+sqlite3 slcsp.sqlite3 << EOF
+  CREATE VIEW plan_zips AS
+  SELECT plan_id,
+         z.zipcode,
+         z.name,
+         z.county_code,
+         p.metal_level,
+         p.state,
+         p.rate_area,
+         p.rate,
+         (p.state || p.rate_area) AS rate_area_tuple
+  FROM plans p
+  JOIN zips z
+    ON z.rate_area = p.rate_area AND
+       z.state = p.state
+  WHERE p.metal_level = "Silver";
+EOF
+
+ruby etl.rb # Process the zips, pulling out rates
+cat slcsp-out.csv
